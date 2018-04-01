@@ -4,7 +4,7 @@
     [clojure.test :refer :all]
     [datomic-interceptors.api :as d]
     [io.pedestal.interceptor.chain :as chain]
-    [io.pedestal.interceptor :as interceptor :refer [interceptor]]
+    [io.pedestal.interceptor.helpers :as helpers :refer [before]]
     [clojure.spec.alpha :as s]))
 
 ;;;;;;;;; SETUP ;;;;;;;;
@@ -15,54 +15,76 @@
 (s/def ::username string?)
 (s/def ::user (s/keys :req [::username]))
 
-; in tests, pretend to require a username for all datomic api calls
-(defmethod d/with-app-context :test
+;;;; shared utils ;;;;
+
+(defn db-delegate
+  "return an interceptor that mocks a datomic d/db call"
+  [conn]
+  (before :db-delegate (fn [context]
+                         ; a real delegate would invoke d/db here
+                         (let [db-result fake-db]
+                           (->> (assoc conn ::d/UNSAFE! db-result) ; <<< db value goes here, the rest of the conn map is untouched
+                                (assoc context ::d/result))))))
+
+(defn pull-delegate
+  "return an interceptor that mocks a datomic d/pull call"
   [_]
-  (s/keys :req [::user]))
+  (before :pull-delegate (fn [context]
+                           ; a real delegate would invoke d/pull here, using the db arg
+                           (let [pull-result {:db/id        100
+                                              :identity/key 42}]
+                             (assoc context ::d/result pull-result)))))
+
+(defn query-delegate
+  [_]
+  (before :query-delegate (fn [context]
+                            ; a real delegate would invoke d/q here, using the db arg
+                            (let [query-result #{[100 42]}]
+                              (assoc context ::d/result query-result)))))
+
+(defn attribute-delegate
+  [_]
+  (before :attribute-delegate (fn [context]
+                                ; a real delegate would invoke d/attribute here
+                                (let [attr-result 42]
+                                  (assoc context ::d/result attr-result)))))
+
+; in tests, pretend to require a username for all datomic api calls
+(s/def ::test-app-context (s/keys :req [::user]))
+
+;;;; basic test multi-methods ;;;;
+
+(defmethod d/with-app-context :basic [_] ::test-app-context)
 
 ; construct the interceptor chain for d/db
-(defmethod d/db-context :test
-  [conn]
-  {::chain/queue [(interceptor {:name  :db-delegate
-                                :enter (fn [context]
-                                         ; a real delegate would invoke d/db here
-                                         (let [db-result fake-db]
-                                           (->> (assoc conn ::d/UNSAFE! db-result)
-                                                (assoc context ::d/result))))})]})
+(defmethod d/db-context :basic [conn]
+  {::chain/queue [(db-delegate conn)]})
 
 ; construct the interceptor chain for d/pull
-(defmethod d/pull-context :test
-  [db pattern eid]
-  {::chain/queue [(interceptor {:name  :pull-delegate
-                                :enter (fn [context]
-                                         ; a real delegate would invoke d/pull here
-                                         (let [pull-result {:db/id        100
-                                                            :identity/key 42}]
-                                           (assoc context ::d/result pull-result)))})]})
+(defmethod d/pull-context :basic [db pattern eid]
+  {::chain/queue [(pull-delegate db)]})
 
-(defmethod d/query-context :test
+; construct the interceptor chain for d/query
+(defmethod d/query-context :basic
   [query db & inputs]
-  {::chain/queue [(interceptor {:name  :query-delegate
-                                :enter (fn [context]
-                                         ; a real delegate would invoke d/q here
-                                         (let [query-result #{[100 42]}]
-                                           (assoc context ::d/result query-result)))})]})
+  {::chain/queue [(query-delegate db)]})
 
-(defmethod d/attribute-context :test
+(defmethod d/attribute-context :basic
   [db attrid]
-  {::chain/queue [(interceptor {:name  :attribute-delegate
-                                :enter (fn [context]
-                                         ; a real delegate would invoke d/attribute here
-                                         (let [attr-result 42]
-                                           (assoc context ::d/result attr-result)))})]})
+  {::chain/queue [(attribute-delegate db)]})
+
+;;;; middleware test multi-methods ;;;;
+
 
 ;;;;;;;;; TESTS ;;;;;;;;
 
-(deftest read-using-api
+(deftest basic-reads
+
+  ; all tests here use the :basic config above
 
   (let [app-context {::username "Dave"}
         conn {::d/api     :mock
-              ::d/app     :test
+              ::d/app     :basic
               ::d/UNSAFE! fake-conn
               ::user      app-context}
         ; below looks just like the datomic api

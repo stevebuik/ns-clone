@@ -4,6 +4,7 @@
     [clojure.test :refer :all]
     [datomic-interceptors.api :as d]
     [io.pedestal.interceptor.chain :as chain]
+    [io.pedestal.interceptor :as interceptor :refer [interceptor]]
     [clojure.spec.alpha :as s]))
 
 ;;;;;;;;; SETUP ;;;;;;;;
@@ -22,38 +23,38 @@
 ; construct the interceptor chain for d/db
 (defmethod d/db-context :test
   [conn]
-  {::chain/queue [{:name  "mock datomic db delegate"
-                   :enter (fn [context]
-                            ; a real delegate would invoke d/db here
-                            (let [db-result fake-db]
-                              (->> (assoc conn ::d/UNSAFE! db-result)
-                                   (assoc context ::d/result))))}]})
+  {::chain/queue [(interceptor {:name  :db-delegate
+                                :enter (fn [context]
+                                         ; a real delegate would invoke d/db here
+                                         (let [db-result fake-db]
+                                           (->> (assoc conn ::d/UNSAFE! db-result)
+                                                (assoc context ::d/result))))})]})
 
 ; construct the interceptor chain for d/pull
 (defmethod d/pull-context :test
   [db pattern eid]
-  {::chain/queue [{:name  "mock datomic pull delegate"
-                   :enter (fn [context]
-                            ; a real delegate would invoke d/pull here
-                            (let [pull-result {:db/id        100
-                                               :identity/key 42}]
-                              (assoc context ::d/result pull-result)))}]})
+  {::chain/queue [(interceptor {:name  :pull-delegate
+                                :enter (fn [context]
+                                         ; a real delegate would invoke d/pull here
+                                         (let [pull-result {:db/id        100
+                                                            :identity/key 42}]
+                                           (assoc context ::d/result pull-result)))})]})
 
 (defmethod d/query-context :test
   [query db & inputs]
-  {::chain/queue [{:name  "mock datomic query delegate"
-                   :enter (fn [context]
-                            ; a real delegate would invoke d/q here
-                            (let [query-result #{[100 42]}]
-                              (assoc context ::d/result query-result)))}]})
+  {::chain/queue [(interceptor {:name  :query-delegate
+                                :enter (fn [context]
+                                         ; a real delegate would invoke d/q here
+                                         (let [query-result #{[100 42]}]
+                                           (assoc context ::d/result query-result)))})]})
 
 (defmethod d/attribute-context :test
   [db attrid]
-  {::chain/queue [{:name  "mock datomic attribute delegate"
-                   :enter (fn [context]
-                            ; a real delegate would invoke d/attribute here
-                            (let [attr-result 42]
-                              (assoc context ::d/result attr-result)))}]})
+  {::chain/queue [(interceptor {:name  :attribute-delegate
+                                :enter (fn [context]
+                                         ; a real delegate would invoke d/attribute here
+                                         (let [attr-result 42]
+                                           (assoc context ::d/result attr-result)))})]})
 
 ;;;;;;;;; TESTS ;;;;;;;;
 

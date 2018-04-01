@@ -4,8 +4,6 @@ datomic-interceptors.api
     [clojure.spec.alpha :as s]
     [io.pedestal.interceptor.chain :as chain]))
 
-(declare db-context pull-context query-context attribute-context)
-
 ;;;;;;;;; SPECS ;;;;;;;;
 
 (s/def ::api #{:client :peer :mock})
@@ -24,41 +22,6 @@ datomic-interceptors.api
 (s/def ::connection (s/and (s/keys :req [::api ::app ::UNSAFE!])
                            ::with-app-context))
 
-;;;;;;;;; API WRAPPER FNS ;;;;;;;;
-
-(defn- exec
-  [context]
-  (::result (chain/execute context)))
-
-(defn db
-  [connection]
-  (exec (db-context connection)))
-
-(defn pull
-  [db pattern eid]
-  (exec (pull-context db pattern eid)))
-
-(defn q
-  [query db & inputs]                                       ; db must be the 2nd arg. not quite as flexible as the datomic api
-  (exec (query-context query db inputs)))
-
-(defn attribute
-  [db attrid]
-  (exec (attribute-context db attrid)))
-
-;;;;;;;;; INTERCEPTORS ;;;;;;;;
-
-
-
-;;;;;;;;; INTERCEPTORS API  ;;;;;;;;
-
-; only providing fns that are available in call Datomic apis. e.g. not including d/entity since the client api doesn't support it
-
-(defmulti db-context ::app)
-(defmulti pull-context (fn [db _ _] (::app db)))
-(defmulti query-context (fn [query db inputs] (::app db)))
-(defmulti attribute-context (fn [db attrid] (::app db)))
-
 (comment
 
   (s/explain-data ::connection {::api     :mock
@@ -67,4 +30,52 @@ datomic-interceptors.api
 
   (require '[clojure.test.check.generators :as gen])
   (gen/sample (s/gen ::connection) 2))
+
+;;;;;;;; UTIL FNS ;;;;;;;;
+
+(defn- exec
+  [context]
+  (::result (chain/execute context)))
+
+(defn context-from-args
+  "return the first instance of a seq of values that contains an ::app key"
+  [args]
+  (->> args
+       (filter map?)
+       (filter ::app)
+       first))
+
+(defn context-dispatch
+  [& args]
+  (::app (context-from-args args)))
+
+;;;;;;;;; DATOMIC INTERCEPTORS FACTORIES  ;;;;;;;;
+
+; only providing fns that are available in call Datomic apis. e.g. not including d/entity since the client api doesn't support it
+
+; TODO generate these multi-methods and the clone fns below using a macro
+
+(defmulti db-context context-dispatch)
+(defmulti pull-context context-dispatch)
+(defmulti query-context context-dispatch)
+(defmulti attribute-context context-dispatch)
+
+;;;;;;;;; NS/API CLONE FNS ;;;;;;;;
+
+(defn db
+  [& args]
+  (exec (apply db-context args)))
+
+(defn pull
+  [& args]
+  (exec (apply pull-context args)))
+
+(defn q
+  [& args]
+  (exec (apply query-context args)))
+
+(defn attribute
+  [db attrid]
+  (exec (attribute-context db attrid)))
+
 

@@ -1,5 +1,5 @@
-(defproject datomic-interceptors "0.1.0-SNAPSHOT"
-  :description "A Datomic shim that supports middleware using interceptors"
+(defproject ns-clone "0.1.0-SNAPSHOT"
+  :description "Clones a namespace by replicating some/all functions and invoking them using Pedestal Interceptor chains."
   :license {:name "Eclipse Public License"
             :url  "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.9.0"]

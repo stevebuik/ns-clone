@@ -186,7 +186,7 @@
     (d/pull db '[*] 1)
     (d/pull db '[*] 1)
     (d/q '[:find ?e ?k
-           :in $ ?id ?e
+           :in $ ?e
            :where
            [?e :identity/key ?k]]
          db

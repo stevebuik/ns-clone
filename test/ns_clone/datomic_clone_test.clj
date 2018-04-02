@@ -124,7 +124,7 @@
 
     (testing "attribute"
       ; below looks just like the datomic api
-      (is (= 42 (d/attribute :identity/key db 100))))
+      (is (= 42 (d/attribute db 100))))
 
     (testing "transact"
       ; below looks just like the datomic api
@@ -162,8 +162,8 @@
                     (query-delegate (first args) (rest args))]}))
 
 (defmethod d/attribute-context :middleware-tests
-  [key db attrid]
-  {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/attribute key attrid)
+  [db attrid]
+  {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/attribute attrid)
                   (attribute-delegate db)]})
 
 (defmethod d/transact-context :middleware-tests [conn data]
@@ -191,7 +191,7 @@
            [?e :identity/key ?k]]
          db
          100)
-    (d/attribute :identity/key db 100)
+    (d/attribute db 100)
     (d/transact conn [{:identity/key :foo}])
 
     ; now check the logged data

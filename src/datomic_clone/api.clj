@@ -49,8 +49,7 @@
 (s/fdef pull :args (s/cat :db ::clone/wrapped-app-context
                           :expr vector?
                           :eid any?))
-(s/fdef attribute :args (s/cat :attribute keyword?
-                               :db ::clone/wrapped-app-context
+(s/fdef attribute :args (s/cat :db ::clone/wrapped-app-context
                                :aid any?))
 (s/fdef transact :args (s/cat :conn ::clone/wrapped-app-context
                               :data vector?))

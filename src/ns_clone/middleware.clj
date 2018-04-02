@@ -1,4 +1,4 @@
-(ns datomic-interceptors.middleware
+(ns ns-clone.middleware
   (:require
     [clojure.test :refer :all]
     [io.pedestal.interceptor.helpers :as helpers :refer [around]]))

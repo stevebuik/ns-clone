@@ -1,12 +1,17 @@
-(ns datomic-interceptors.api-test
+(ns ns-clone.datomic-clone-test
   (:require
     [clojure.pprint :refer [pprint]]
     [clojure.test :refer :all]
-    [datomic-interceptors.api :as d]
-    [datomic-interceptors.middleware :as middleware]
+    [clojure.spec.test.alpha :as st]
+    [ns-clone.core :as clone]
+    [datomic-clone.api :as d]
+    [ns-clone.middleware :as middleware]
     [io.pedestal.interceptor.chain :as chain]
     [io.pedestal.interceptor.helpers :as helpers :refer [before]]
-    [clojure.spec.alpha :as s]))
+    [clojure.spec.alpha :as s])
+  (:import (clojure.lang ExceptionInfo)))
+
+(st/instrument)
 
 ;;;;;;;;; SETUP ;;;;;;;;
 
@@ -15,6 +20,8 @@
 
 (s/def ::username string?)
 (s/def ::user (s/keys :req [::username]))
+; this is the fake app context spec. used below in :basic-tests and :middleware-tests
+(s/def ::test-app-context (s/keys :req [::user]))
 
 ;;;; shared utils ;;;;
 
@@ -23,8 +30,8 @@
   [conn]
   (before :db-delegate (fn [context]
                          (let [db-result fake-db            ; << a real delegate would invoke d/db here
-                               wrapped-db-value (assoc conn ::d/UNSAFE! db-result)]
-                           (assoc context ::d/result wrapped-db-value)))))
+                               wrapped-db-value (assoc conn ::clone/UNSAFE! db-result)]
+                           (assoc context ::clone/result wrapped-db-value)))))
 
 (defn pull-delegate
   "return an interceptor that mocks a datomic d/pull call"
@@ -33,31 +40,29 @@
                            ; a real delegate would invoke d/pull here, using the db arg
                            (let [pull-result {:db/id        100
                                               :identity/key 42}]
-                             (assoc context ::d/result pull-result)))))
+                             (assoc context ::clone/result pull-result)))))
 
 (defn query-delegate
   [_ _]
   (before :query-delegate (fn [context]
                             ; a real delegate would invoke d/q here, using the db arg
                             (let [query-result #{[100 42]}]
-                              (assoc context ::d/result query-result)))))
+                              (assoc context ::clone/result query-result)))))
 
 (defn attribute-delegate
   [_]
   (before :attribute-delegate (fn [context]
                                 ; a real delegate would invoke d/attribute here
                                 (let [attr-result 42]
-                                  (assoc context ::d/result attr-result)))))
-
-; in tests, pretend to require a username for all datomic api calls
-(s/def ::test-app-context (s/keys :req [::user]))
+                                  (assoc context ::clone/result attr-result)))))
 
 ;;;;;;;;; TESTS ;;;;;;;;
 
 ;;;; :basic-test multi-methods ;;;;
 
-; use the ::test-app-context for :basic-tests
-(defmethod d/with-app-context :basic-tests [_] ::test-app-context)
+; if you spec'd your api fns, then implement the multi-spec to apply them for each app key
+; this is also optional but, if not done, your
+(defmethod clone/with-app-context :basic-tests [_] ::test-app-context)
 
 ; construct the interceptor chain for d/db
 (defmethod d/db-context :basic-tests [conn]
@@ -73,24 +78,24 @@
   {::chain/queue [(query-delegate (first args) (rest args))]})
 
 (defmethod d/attribute-context :basic-tests
-  [db attrid]
-  {::chain/queue [(attribute-delegate db)]})
-
+  [& args]
+  {::chain/queue [(attribute-delegate (second args))]})
 
 (deftest basic-reads
 
   ; all tests here use the :basic-tests config above
 
   (let [app-context {::username "Dave"}
-        conn {::d/api     :mock
-              ::d/app     :basic-tests
-              ::d/UNSAFE! fake-conn
-              ::user      app-context}
+        ; this is a wrapped arg which provides all data required for the app interceptor chain
+        conn {::clone/api     :mock
+              ::clone/app     :basic-tests
+              ::clone/UNSAFE! fake-conn
+              ::user          app-context}
         ; below looks just like the datomic api
         db (d/db conn)]
 
     (testing "database value"
-      (is (= fake-db (::d/UNSAFE! db)) "conn was transformed into a db ")
+      (is (= fake-db (::clone/UNSAFE! db)) "conn was transformed into a db ")
       (is (= app-context (get-in db [::user])) "app context is present in db"))
 
     (testing "pull"
@@ -112,16 +117,22 @@
 
     (testing "attribute"
       ; below looks just like the datomic api
-      (is (= 42 (d/attribute db 100))))))
+      (is (= 42 (d/attribute :identity/key db 100))))))
 
 (deftest bad-data
-  ; TODO add specs to api fns
-  :TODO)
+  (testing "invalid app context"
+    (let [app-context {:invalid "value"}
+          conn {::clone/api     :mock
+                ::clone/app     :basic-tests
+                ::clone/UNSAFE! fake-conn
+                ::user          app-context}]
+      (is (thrown? ExceptionInfo (d/db conn))
+          "cloned fn call fails due to spec checking the app context in the wrapped data"))))
 
 ;;;; :middleware-test multi-methods ;;;;
 
 ; use the ::test-app-context for :middleware-tests as well
-(defmethod d/with-app-context :middleware-tests [_] ::test-app-context)
+(defmethod clone/with-app-context :middleware-tests [_] ::test-app-context)
 
 (defmethod d/db-context :middleware-tests [conn]
   {::chain/queue [(middleware/logger (::middleware/logger-data conn) 'd/db)
@@ -133,21 +144,21 @@
 
 (defmethod d/query-context :middleware-tests
   [& args]
-  (let [db (d/context-from-args args)]
+  (let [db (clone/context-from-args args)]
     {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/q (first args))
                     (query-delegate (first args) (rest args))]}))
 
 (defmethod d/attribute-context :middleware-tests
-  [db attrid]
-  {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/attribute attrid)
+  [key db attrid]
+  {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/attribute key attrid)
                   (attribute-delegate db)]})
 
 (deftest stateful-middleware
   (let [app-context {::username "Dave"}
         log-atom (atom {:invocations []})                   ; must use a vector so that conj (in middleware/logger) appends at end
-        conn {::d/api                  :mock
-              ::d/app                  :middleware-tests
-              ::d/UNSAFE!              fake-conn
+        conn {::clone/api              :mock
+              ::clone/app              :middleware-tests
+              ::clone/UNSAFE!          fake-conn
               ::user                   app-context
               ::middleware/logger-data log-atom}
         db (d/db conn)]
@@ -163,7 +174,7 @@
            [?e :identity/key ?k]]
          db
          100)
-    (d/attribute db 100)
+    (d/attribute :identity/key db 100)
 
     ; now check the logged data
     (is (= '[d/db d/pull d/pull d/pull d/q d/attribute]

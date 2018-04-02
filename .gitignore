@@ -2,3 +2,4 @@
 /.hgignore
 /.lein-failures
 /target
+/pom.xml

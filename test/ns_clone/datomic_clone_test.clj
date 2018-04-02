@@ -56,6 +56,12 @@
                                 (let [attr-result 42]
                                   (assoc context ::clone/result attr-result)))))
 
+(defn transact-delegate
+  [_ _]
+  (before :transact-delegate (fn [context]
+                               ; a real delegate would invoke d/transact here
+                               (assoc context ::clone/result {:tx-result {}}))))
+
 ;;;;;;;;; TESTS ;;;;;;;;
 
 ;;;; :basic-test multi-methods ;;;;
@@ -80,6 +86,9 @@
 (defmethod d/attribute-context :basic-tests
   [& args]
   {::chain/queue [(attribute-delegate (second args))]})
+
+(defmethod d/transact!-context :basic-tests [conn data]
+  {::chain/queue [(transact-delegate conn data)]})
 
 (deftest basic-reads
 
@@ -117,7 +126,11 @@
 
     (testing "attribute"
       ; below looks just like the datomic api
-      (is (= 42 (d/attribute :identity/key db 100))))))
+      (is (= 42 (d/attribute :identity/key db 100))))
+
+    (testing "transact"
+      ; below looks just like the datomic api
+      (is (= {:tx-result {}} (d/transact! conn [{:identity/key :foo}]))))))
 
 (deftest bad-data
   (testing "invalid app context"
@@ -153,6 +166,10 @@
   {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/attribute key attrid)
                   (attribute-delegate db)]})
 
+(defmethod d/transact!-context :middleware-tests [conn data]
+  {::chain/queue [(middleware/logger (::middleware/logger-data conn) 'd/transact! data)
+                  (transact-delegate conn data)]})
+
 (deftest stateful-middleware
   (let [app-context {::username "Dave"}
         log-atom (atom {:invocations []})                   ; must use a vector so that conj (in middleware/logger) appends at end
@@ -175,9 +192,10 @@
          db
          100)
     (d/attribute :identity/key db 100)
+    (d/transact! conn [{:identity/key :foo}])
 
     ; now check the logged data
-    (is (= '[d/db d/pull d/pull d/pull d/q d/attribute]
+    (is (= '[d/db d/pull d/pull d/pull d/q d/attribute d/transact!]
            (->> @log-atom
                 :invocations
                 (mapv :fn)))

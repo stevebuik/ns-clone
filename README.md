@@ -18,15 +18,16 @@ The clone api uses multi-methods to allow open extension of any application cont
 
 ## The original use-case
 
-A wrapper for the Datomic API functions available in all libs i.e. the lowest common denominator set of functions
-
-Allows application code to be built against an API that will work with Client AND Peer libraries.
+A wrapper for the Datomic API functions available in all libs
+i.e. the lowest common denominator set of functions from the Client AND Peer libraries.
 
 This is useful when want local dev/test against a local "mem" database but want to run your code in production against the Cloud/Client API.
 
-The **peer** sub-project has an implementation of the delegate interceptors for use with the Peer API.
+The **datomic-peer-clone** sub-project has an implementation of the delegate interceptors for use with the Peer API.
 
 TODO **client** sub-project
+
+Notes on api open-ness. peer api not open but client is a protocol so better. this lib creates a consistent api for both.
 
 ## Usage
 
@@ -34,10 +35,17 @@ Look at the Datomic example for how to clone a namespace. Then in your own *clon
 
 1. Implement the *defmethods* for your application context and interceptor chains
 2. Optionally implement a spec for your app context data
-
-Then replace the `(:require [datomic.api :as d])` with `(:require [datomic-interceptors.api :as d])`
+3. Replace the `(:require [datomic.api :as d])` with your clone namespace.
 
 The datomic-clone-test namespace provides a simple mocked version of this.
+
+Then look at the **datomic-peer-clone** sub-project to see how to implement a clone with a real delegate interceptor instead of the mock delegates in the tests.
+The **datomic-peer-clone** sub-project is intended for use as a dependency in Datomic projects which need to run using both the local (peer) or Cloud (client) APIs.
+
+Despite the Datomic slant, the **ns-clone** project has no Datomic dependencies and is designed to be used to clone any namespace, without Datomic.
+That is why **datomic-peer-clone** is a sub-project, to avoid unwanted dependencies when used elsewhere.
+
+##
 
 ## Assumptions
 
@@ -46,17 +54,26 @@ The wrapped value (the original arg) is passed in the :UNSAFE! map entry. This m
 
 If the wrapped arg is translated into another value, for use in another cloned function, then it should transfer all the map data and assoc the new value in the :UNSAFE! key.
 
+## Status
+
+This lib is being used in a Datomic webapp, which is not yet running in Production.
+
+Not yet deployed to Clojars, will do so after initial feedback.
+
 ## Disadvantages
 
-Stacktraces : will be bigger because each interceptor is now a part of the stack.
-Documentation : when you use your IDE to show doc for a clone fn, you will see the clone and not the underlying (cloned) functions doc.
+* Stacktraces : will be bigger because each interceptor is now a part of the stack.
+* Error messages : arity errors in api calls are reported by the clone namespace. not too bad since the same error would occur using the cloned namespace.
+* Documentation : when you use your IDE to show doc for a clone fn, you will see the clone and not the underlying (cloned) functions doc.
 
 ## Ideas / Future
 
-This general pattern could be used to add middleware any namespace.
-Need a macro to generate the clone fns and queue factory fns i.e. less boilerplate to use this lib.
+Add a macro to generate the clone fns and queue factory fns i.e. less boilerplate to use this lib.
 
-Enhanced the logger interceptor to record the invoking function i.e. one above in the call stack.
+The Datomic example clone needs a transact-async fn. My future foo is not strong enough to do this.
+If you know how to wrap a future in a future (without adding a dependency), I'd appreciate the help.
+
+Enhance the logger interceptor to record the invoking function i.e. one above in the call stack.
 This will be useful when wanting to local where a cloned fn was called.
 
 ## Acknowledgements

@@ -1,10 +1,6 @@
-(defproject ns-clone "0.1.0-SNAPSHOT"
-  :description "Clones a namespace by replicating some/all functions and invoking them using Pedestal Interceptor chains."
-  :license {:name "Eclipse Public License"
-            :url  "http://www.eclipse.org/legal/epl-v10.html"}
+(defproject datomic-peer-clone "0.1.0-SNAPSHOT"
+  :description "The Datomic peer API, cloned using ns-clone. Exposing enough fns to be compatible with the Cloud/Client API"
   :dependencies [[org.clojure/clojure "1.9.0"]
-                 [org.clojure/spec.alpha "0.1.143"]
-                 [io.pedestal/pedestal.interceptor "0.5.3"]]
-  :sub ["datomic-peer-clone"]
-  :plugins [[lein-sub "0.3.0"]]
+                 [ns-clone "0.1.0-SNAPSHOT"]
+                 [com.datomic/datomic-free "0.9.5561.50"]]
   :profiles {:dev {:dependencies [[org.clojure/test.check "0.9.0"]]}})

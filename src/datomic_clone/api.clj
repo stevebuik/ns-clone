@@ -13,7 +13,7 @@
 (defmulti pull-context clone/context-dispatch)
 (defmulti query-context clone/context-dispatch)
 (defmulti attribute-context clone/context-dispatch)
-(defmulti transact!-context clone/context-dispatch)
+(defmulti transact-context clone/context-dispatch)
 
 ;;;;;;;;; NS/API CLONE FNS ;;;;;;;;
 
@@ -33,12 +33,13 @@
   [& args]
   (clone/exec (apply attribute-context args)))
 
-(defn transact!
+(defn transact
   [& args]
-  (clone/exec (apply transact!-context args)))
+  (clone/exec (apply transact-context args)))
 
 ;;;;;;;; FSPECS (optional) ;;;;;;;
 
+; TODO write a spec that can handle a non-static db arg position
 ; only fns where the position of the wrapped arg is known can be spec'd
 ; e.g. d/q allows the db arg to be anywhere except the first arg
 
@@ -51,5 +52,5 @@
 (s/fdef attribute :args (s/cat :attribute keyword?
                                :db ::clone/wrapped-app-context
                                :aid any?))
-(s/fdef transact! :args (s/cat :conn ::clone/wrapped-app-context
-                               :data vector?))
+(s/fdef transact :args (s/cat :conn ::clone/wrapped-app-context
+                              :data vector?))

@@ -4,7 +4,7 @@
     [clojure.test :refer :all]
     [clojure.spec.test.alpha :as st]
     [ns-clone.core :as clone]
-    [datomic-clone.api :as d]
+    [datomic-clone.api :as d]                               ; << do this replacement in your api consumer namespaces
     [ns-clone.middleware :as middleware]
     [io.pedestal.interceptor.chain :as chain]
     [io.pedestal.interceptor.helpers :as helpers :refer [before]]
@@ -23,7 +23,8 @@
 ; this is the fake app context spec. used below in :basic-tests and :middleware-tests
 (s/def ::test-app-context (s/keys :req [::user]))
 
-;;;; shared utils ;;;;
+;;;; shared delegate interceptors ;;;;
+; these interceptors and last in the queue and call the underlying cloned fns. in these tests they mock the Datomic api calls.
 
 (defn db-delegate
   "return an interceptor that mocks a datomic d/db call"
@@ -66,19 +67,18 @@
 
 ;;;; :basic-test multi-methods ;;;;
 
-; if you spec'd your api fns, then implement the multi-spec to apply them for each app key
-; this is also optional but, if not done, your
+; if you added specs for your clone/api fns, then implement the multi-spec to enable them for each app key
+; this is also optional but, if not done, your specs will be ignored
 (defmethod clone/with-app-context :basic-tests [_] ::test-app-context)
 
-; construct the interceptor chain for d/db
+; methods to return Pedestal contexts (interceptor chains) for each wrapped fn
+
 (defmethod d/db-context :basic-tests [conn]
   {::chain/queue [(db-delegate conn)]})
 
-; construct the interceptor chain for d/pull
 (defmethod d/pull-context :basic-tests [db pattern eid]
   {::chain/queue [(pull-delegate db)]})
 
-; construct the interceptor chain for d/query
 (defmethod d/query-context :basic-tests
   [& args]
   {::chain/queue [(query-delegate (first args) (rest args))]})
@@ -87,12 +87,10 @@
   [& args]
   {::chain/queue [(attribute-delegate (second args))]})
 
-(defmethod d/transact!-context :basic-tests [conn data]
+(defmethod d/transact-context :basic-tests [conn data]
   {::chain/queue [(transact-delegate conn data)]})
 
-(deftest basic-reads
-
-  ; all tests here use the :basic-tests config above
+(deftest basic-read-and-write                               ; using :basic-tests config above
 
   (let [app-context {::username "Dave"}
         ; this is a wrapped arg which provides all data required for the app interceptor chain
@@ -130,7 +128,7 @@
 
     (testing "transact"
       ; below looks just like the datomic api
-      (is (= {:tx-result {}} (d/transact! conn [{:identity/key :foo}]))))))
+      (is (= {:tx-result {}} (d/transact conn [{:identity/key :foo}]))))))
 
 (deftest bad-data
   (testing "invalid app context"
@@ -146,6 +144,8 @@
 
 ; use the ::test-app-context for :middleware-tests as well
 (defmethod clone/with-app-context :middleware-tests [_] ::test-app-context)
+
+; notice that all these inteceptor chains include an extra logger interceptor
 
 (defmethod d/db-context :middleware-tests [conn]
   {::chain/queue [(middleware/logger (::middleware/logger-data conn) 'd/db)
@@ -166,8 +166,8 @@
   {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/attribute key attrid)
                   (attribute-delegate db)]})
 
-(defmethod d/transact!-context :middleware-tests [conn data]
-  {::chain/queue [(middleware/logger (::middleware/logger-data conn) 'd/transact! data)
+(defmethod d/transact-context :middleware-tests [conn data]
+  {::chain/queue [(middleware/logger (::middleware/logger-data conn) 'd/transact data)
                   (transact-delegate conn data)]})
 
 (deftest stateful-middleware
@@ -192,14 +192,12 @@
          db
          100)
     (d/attribute :identity/key db 100)
-    (d/transact! conn [{:identity/key :foo}])
+    (d/transact conn [{:identity/key :foo}])
 
     ; now check the logged data
-    (is (= '[d/db d/pull d/pull d/pull d/q d/attribute d/transact!]
+    (is (= '[d/db d/pull d/pull d/pull d/q d/attribute d/transact]
            (->> @log-atom
                 :invocations
                 (mapv :fn)))
         "logger interceptor recorded all api calls, including the db call")))
 
-(deftest basic-writes
-  :TODO)

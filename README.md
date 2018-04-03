@@ -32,6 +32,13 @@ TODO **datomic-client-clone** sub-project
 The Datomic peer api not open (i.e. functions only) but the client api is a protocol so much better.
 This lib should provide a consistent api for both.
 
+## Migration use-case
+
+A cloned api can also be used to migrate away from using a namespace without changing consumers of that namespace.
+Since your application code chooses how to delegate the clone functions, you can change the underlying implementation whenever you want.
+
+With some more hammock time this pattern might be useful in other use-cases as well.
+
 ## Usage
 
 Look at the Datomic example for how to clone a namespace. Then in your own *clone* namespace:

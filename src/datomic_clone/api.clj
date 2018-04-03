@@ -14,6 +14,8 @@
 (defmulti query-context clone/context-dispatch)
 (defmulti attribute-context clone/context-dispatch)
 (defmulti transact-context clone/context-dispatch)
+(defmulti squuid-context (constantly :all))
+(defmulti tempid-context (constantly :all))
 
 ;;;;;;;;; NS/API CLONE FNS ;;;;;;;;
 
@@ -37,6 +39,17 @@
   [& args]
   (clone/exec (apply transact-context args)))
 
+; fns below are for backward compatibility on peer based projects migrating to the clone api
+; they break the design requirement that one of the args is wrapped in a map
+
+(defn squuid
+  [& args]
+  (clone/exec (apply squuid-context args)))
+
+(defn tempid
+  [& args]
+  (clone/exec (apply tempid-context args)))
+
 ;;;;;;;; FSPECS (optional) ;;;;;;;
 
 ; TODO write a spec that can handle a non-static db arg position
@@ -53,3 +66,4 @@
                                :aid any?))
 (s/fdef transact :args (s/cat :conn ::clone/wrapped-app-context
                               :data vector?))
+(s/fdef tempid :args (s/cat :partition keyword?))

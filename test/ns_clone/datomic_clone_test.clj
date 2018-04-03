@@ -9,7 +9,8 @@
     [io.pedestal.interceptor.chain :as chain]
     [io.pedestal.interceptor.helpers :as helpers :refer [before]]
     [clojure.spec.alpha :as s])
-  (:import (clojure.lang ExceptionInfo)))
+  (:import (clojure.lang ExceptionInfo)
+           (java.util UUID)))
 
 (st/instrument)
 
@@ -23,7 +24,20 @@
 ; this is the fake app context spec. used below in :basic-tests and :middleware-tests
 (s/def ::test-app-context (s/keys :req [::user]))
 
+; not logging d/tempid or d/squuid calls since the log atom is not available and they are not very useful in logs anyway
+
+; need a delegate for d/tempid, shared by all app/api combinations
+(defmethod d/tempid-context :all [partition]
+  {::chain/queue [(before :tempid-delegate (fn [context]
+                                             (assoc context ::clone/result (str partition "-" (UUID/randomUUID)))))]})
+
+; need a delegate for d/squuid, shared by all app/api combinations
+(defmethod d/squuid-context :all []
+  {::chain/queue [(before :tempid-delegate (fn [context]
+                                             (assoc context ::clone/result (UUID/randomUUID))))]})
+
 ;;;; shared delegate interceptors ;;;;
+
 ; these interceptors and last in the queue and call the underlying cloned fns. in these tests they mock the Datomic api calls.
 
 (defn db-delegate
@@ -192,7 +206,9 @@
          db
          100)
     (d/attribute db 100)
-    (d/transact conn [{:identity/key :foo}])
+    (d/transact conn [{:db/id        (d/tempid :db.part/user)
+                       :identity/id  (d/squuid)
+                       :identity/key :foo}])
 
     ; now check the logged data
     (is (= '[d/db d/pull d/pull d/pull d/q d/attribute d/transact]

@@ -1,8 +1,11 @@
-(ns datomic-peer.middleware
+(ns ^{:doc "All uses of the Datomic peer API are in this namespace. Allows the consumer namespaces to only require the clone namespace."}
+datomic-peer.middleware
   (:require
+    [clojure.pprint :refer [pprint]]
     [ns-clone.core :as clone]
-    [io.pedestal.interceptor.helpers :as helpers :refer [before]]
-    [datomic.api :as d]))
+    [io.pedestal.interceptor.helpers :as helpers :refer [before around]]
+    [datomic.api :as d]
+    [clojure.set :as set]))
 
 ; fns that return pedestal interceptors that call the Datomic Peer API fns
 
@@ -39,14 +42,24 @@
 
 (defn transact-delegate
   [conn data]
-  (before :transact-delegate (fn [context]
-                               (let [result @(d/transact (::clone/UNSAFE! conn) data)
-                                     wrap-db (fn [db]
-                                               (assoc conn ::clone/UNSAFE! db))]
-                                 (assoc context ::clone/result
-                                                (atom       ; use an atom to make the result IDeref-able
-                                                  (-> result
-                                                      (update :db-before wrap-db)
-                                                      (update :db-after wrap-db))))))))
+  (around :transact-delegate
+          (fn [context]
+            ; add the data to the context, so that other interceptors can decorate it if required
+            (assoc context ::transaction-data data))
+          (fn [context]
+            (let [result @(d/transact (::clone/UNSAFE! conn) (::transaction-data context))
+                  wrap-db (fn [db]
+                            (assoc conn ::clone/UNSAFE! db))]
+              (assoc context ::clone/result
+                             (atom                          ; use an atom to make the result IDeref-able
+                               (-> result
+                                   (update :db-before wrap-db)
+                                   (update :db-after wrap-db))))))))
 
 ; TODO transact-async-delegate - requires the same wrapping as transact-delegate, but inside a future
+
+(defn transaction-annotator
+  [annotation]
+  (before (fn [context]
+            (->> (assoc annotation :db/id (d/tempid :db.part/tx)) ; marks the entity as a transaction annotation
+                 (update context ::transaction-data conj)))))

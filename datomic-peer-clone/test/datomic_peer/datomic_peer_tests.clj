@@ -8,7 +8,8 @@
     [io.pedestal.interceptor.chain :as chain]
     [datomic-peer.middleware :as peer-middleware]
     [clojure.spec.alpha :as s]
-    [datomic-peer.test-utils :as utils])
+    [datomic-peer.test-utils :as utils]
+    [clojure.set :as set])
   (:import (java.util UUID)))
 
 (s/def ::username string?)
@@ -38,7 +39,11 @@
 
 (defmethod d/transact-context :middleware-tests [conn data]
   {::chain/queue [(middleware/logger (::middleware/logger-data conn) 'd/transact data)
-                  ; TODO add a txn annotation middleware
+                  (peer-middleware/transaction-annotator
+                    (-> (select-keys conn [::clone/app ::user])
+                        (update ::user ::username)
+                        (set/rename-keys {::user      :user/username
+                                          ::clone/app :app/key})))
                   (peer-middleware/transact-delegate conn data)]})
 
 (deftest peer-middleware
@@ -47,7 +52,17 @@
         log-atom (atom {:invocations []})                   ; must use a vector so that conj (in middleware/logger) appends at end
         test-schema [{:db/ident       :identity/key
                       :db/valueType   :db.type/keyword
-                      :db/cardinality :db.cardinality/one}]
+                      :db/cardinality :db.cardinality/one
+                      :db/unique      :db.unique/identity
+                      :db/doc         "Application data for storing unique keywords"}
+                     {:db/ident       :app/key
+                      :db/valueType   :db.type/keyword
+                      :db/cardinality :db.cardinality/one
+                      :db/doc         "Transaction annotation recording which 'app' chain was being used when a transaction occurred"}
+                     {:db/ident       :user/username
+                      :db/valueType   :db.type/string
+                      :db/cardinality :db.cardinality/one
+                      :db/doc         "Transaction annotation record which user invoked a transaction"}]
         test-data [{:identity/key :foo}]
         {:keys [conn data-results]} (utils/setup uri test-schema test-data)
         conn {::clone/api              :mock
@@ -56,8 +71,10 @@
               ::user                   app-context
               ::middleware/logger-data log-atom}]
 
-    ; notice how datomic invocations below here look identical to datomic.api calls
     (try
+
+      ; notice how datomic invocations below are identical to datomic.api calls
+
       (let [db (d/db conn)
             test-entity-id (->> data-results :tempids vals first)]
         (is (= #{[test-entity-id :foo]}
@@ -77,17 +94,25 @@
               new-entity-id (-> tempids vals first)]
           (is (= {:db/id new-entity-id :identity/key :bar}
                  (d/pull db-after '[*] new-entity-id))
-              "new entity read using db-after returns expected result")))
+              "new entity read using db-after returns expected result")
+          (is (= {:app/key :middleware-tests}
+                 (-> '[:find (pull ?tx-id [:db/txInstant :app/key]) .
+                       :in $ ?user
+                       :where
+                       [?tx-id :user/username ?user]]
+                     (d/q db-after "Dave")
+                     (select-keys [:app/key])))
+              "the new entity transaction was annotated")))
+
+      (is (= '[d/db d/q d/pull d/attribute d/transact d/pull d/q]
+             (->> @log-atom
+                  :invocations
+                  (mapv :fn)))
+          "logger interceptor recorded all api calls, including the db call")
+
       (catch Throwable t
         (utils/teardown uri)
-        (throw t)))
-
-    ; now check the logged data
-    (is (= '[d/db d/q d/pull d/attribute d/transact d/pull]
-           (->> @log-atom
-                :invocations
-                (mapv :fn)))
-        "logger interceptor recorded all api calls, including the db call")))
+        (throw t)))))
 
 
 

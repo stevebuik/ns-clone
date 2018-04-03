@@ -186,15 +186,19 @@
 
 (deftest stateful-middleware
   (let [app-context {::username "Dave"}
-        log-atom (atom {:invocations []})                   ; must use a vector so that conj (in middleware/logger) appends at end
+        ; must use a vector for :invocations so that conj (in middleware/logger) appends at end
+        log-atom (atom {:invocations []})
         conn {::clone/api              :mock
               ::clone/app              :middleware-tests
               ::clone/UNSAFE!          fake-conn
               ::user                   app-context
               ::middleware/logger-data log-atom}
+
+        ; start ns fn calls, this is how code in app namespaces will look
+        ; notice how datomic invocations below here look identical to datomic.api calls
         db (d/db conn)]
 
-    ; notice how datomic invocations below here look identical to datomic.api calls
+    (middleware/start-logger-group conn :reads)
 
     (d/pull db '[*] 1)
     (d/pull db '[*] 1)
@@ -206,14 +210,35 @@
          db
          100)
     (d/attribute db 100)
+    (middleware/start-logger-group conn :writes)
     (d/transact conn [{:db/id        (d/tempid :db.part/user)
                        :identity/id  (d/squuid)
                        :identity/key :foo}])
+    (d/pull db '[*] 1)
 
-    ; now check the logged data
-    (is (= '[d/db d/pull d/pull d/pull d/q d/attribute d/transact]
+    ; finish namespace fn calls
+
+    (is (= '[d/db d/pull d/pull d/pull d/q d/attribute d/transact d/pull]
            (->> @log-atom
                 :invocations
                 (mapv :fn)))
-        "logger interceptor recorded all api calls, including the db call")))
+        "logger interceptor recorded all api calls, including the db call")
+
+    (let [summary (middleware/summarise-log conn :groups-totals)]
+      ;(pprint summary)
+      (is (= [:reads :writes] (mapv :group summary))
+          "two groups recorded")
+      (is (= [{:fn 'd/pull, :count 3}
+              {:fn 'd/q, :count 1}
+              {:fn 'd/attribute, :count 1}]
+             (->> (first summary)
+                  :invocations
+                  (mapv #(select-keys % [:fn :count]))))
+          "first group matches calls above, excluding d/db")
+      (is (= [{:fn 'd/transact, :count 1}
+              {:fn 'd/pull, :count 1}]
+             (->> (last summary)
+                  :invocations
+                  (mapv #(select-keys % [:fn :count]))))
+          "second group matches calls above"))))
 

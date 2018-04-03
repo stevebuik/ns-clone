@@ -3,3 +3,7 @@
 /.lein-failures
 /target
 /pom.xml
+/datomic-peer-clone/.lein-failures
+/datomic-peer-clone/.nrepl-port
+/datomic-peer-clone/pom.xml
+/datomic-peer-clone/target

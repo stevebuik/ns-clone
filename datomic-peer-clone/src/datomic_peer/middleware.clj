@@ -51,7 +51,8 @@ datomic-peer.middleware
                   wrap-db (fn [db]
                             (assoc conn ::clone/UNSAFE! db))]
               (assoc context ::clone/result
-                             (atom                          ; use an atom to make the result IDeref-able
+                             ; use an atom to make the result IDeref-able since that is the result shape for d/transact
+                             (atom
                                (-> result
                                    (update :db-before wrap-db)
                                    (update :db-after wrap-db))))))))
@@ -63,3 +64,14 @@ datomic-peer.middleware
   (before (fn [context]
             (->> (assoc annotation :db/id (d/tempid :db.part/tx)) ; marks the entity as a transaction annotation
                  (update context ::transaction-data conj)))))
+
+(defn tempid-delegate
+  [partition]
+  (before :tempid-delegate (fn [context]
+                             (assoc context ::clone/result (d/tempid partition)))))
+
+(def squuid-delegate
+  (before :tempid-delegate (fn [context]
+                             (assoc context ::clone/result (d/squuid)))))
+
+

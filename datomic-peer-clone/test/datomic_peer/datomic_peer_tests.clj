@@ -2,14 +2,16 @@
   (:require
     [clojure.pprint :refer [pprint]]
     [clojure.test :refer :all]
+    [clojure.spec.alpha :as s]
+    [io.pedestal.interceptor.chain :as chain]
+    [clojure.set :as set]
+
     [ns-clone.core :as clone]
     [ns-clone.middleware :as middleware]
     [datomic-clone.api :as d]                               ; << the clone ns instead of the cloned datomic ns
-    [io.pedestal.interceptor.chain :as chain]
     [datomic-peer.middleware :as peer-middleware]
-    [clojure.spec.alpha :as s]
-    [datomic-peer.test-utils :as utils]
-    [clojure.set :as set])
+
+    [datomic-peer.test-utils :as utils])
   (:import (java.util UUID)))
 
 (s/def ::username string?)
@@ -17,6 +19,12 @@
 (s/def ::test-app-context (s/keys :req [::user]))
 
 (defmethod clone/with-app-context :middleware-tests [_] ::test-app-context)
+
+(defmethod d/tempid-context :all [partition]
+  {::chain/queue [(peer-middleware/tempid-delegate partition)]})
+
+(defmethod d/squuid-context :all []
+  {::chain/queue [peer-middleware/squuid-delegate]})
 
 (defmethod d/db-context :middleware-tests [conn]
   {::chain/queue [(middleware/logger (::middleware/logger-data conn) 'd/db)
@@ -55,6 +63,10 @@
                       :db/cardinality :db.cardinality/one
                       :db/unique      :db.unique/identity
                       :db/doc         "Application data for storing unique keywords"}
+                     {:db/ident       :identity/id
+                      :db/valueType   :db.type/uuid
+                      :db/cardinality :db.cardinality/one
+                      :db/doc         "Application data for storing user facing ids"}
                      {:db/ident       :app/key
                       :db/valueType   :db.type/keyword
                       :db/cardinality :db.cardinality/one
@@ -90,9 +102,14 @@
             "pull returns expected result")
         (is (= :db.type/keyword (:value-type (d/attribute db [:db/ident :identity/key])))
             "attribute returns expected result")
-        (let [{:keys [db-after tempids] :as result} @(d/transact conn [{:identity/key :bar}])
+        (let [new-public-id (d/squuid)
+              {:keys [db-after tempids] :as result} @(d/transact conn [{:db/id        (d/tempid :db.part/user)
+                                                                        :identity/id  new-public-id
+                                                                        :identity/key :bar}])
               new-entity-id (-> tempids vals first)]
-          (is (= {:db/id new-entity-id :identity/key :bar}
+          (is (= {:db/id        new-entity-id
+                  :identity/key :bar
+                  :identity/id  new-public-id}
                  (d/pull db-after '[*] new-entity-id))
               "new entity read using db-after returns expected result")
           (is (= {:app/key :middleware-tests}

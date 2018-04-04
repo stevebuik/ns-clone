@@ -14,6 +14,7 @@
 (defmulti query-context clone/context-dispatch)
 (defmulti attribute-context clone/context-dispatch)
 (defmulti transact-context clone/context-dispatch)
+(defmulti resolve-tempid-context clone/context-dispatch)
 (defmulti squuid-context (constantly :all))
 (defmulti tempid-context (constantly :all))
 
@@ -49,6 +50,10 @@
 (defn tempid
   [& args]
   (clone/exec (apply tempid-context args)))
+
+(defn resolve-tempid
+  [& args]
+  (clone/exec (apply resolve-tempid-context args)))
 
 ;;;;;;;; FSPECS (optional) ;;;;;;;
 

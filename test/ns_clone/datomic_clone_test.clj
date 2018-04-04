@@ -50,10 +50,10 @@
 
 (defn pull-delegate
   "return an interceptor that mocks a datomic d/pull call"
-  [_]
+  [db pattern eid]
   (before :pull-delegate (fn [context]
                            ; a real delegate would invoke d/pull here, using the db arg
-                           (let [pull-result {:db/id        100
+                           (let [pull-result {:db/id        eid
                                               :identity/key 42}]
                              (assoc context ::clone/result pull-result)))))
 
@@ -72,10 +72,18 @@
                                   (assoc context ::clone/result attr-result)))))
 
 (defn transact-delegate
-  [_ _]
+  [conn _]
   (before :transact-delegate (fn [context]
                                ; a real delegate would invoke d/transact here
-                               (assoc context ::clone/result {:tx-result {}}))))
+                               (assoc context ::clone/result {:tx-result {}
+                                                              :db-before (assoc conn ::clone/UNSAFE! {})
+                                                              :db-after  (assoc conn ::clone/UNSAFE! {})}))))
+
+(defn resolve-tempid-delegate
+  [_ _ _]
+  (before :transact-delegate (fn [context]
+                               ; a real delegate would invoke d/resolve-tempid here
+                               (assoc context ::clone/result 123))))
 
 ;;;;;;;;; TESTS ;;;;;;;;
 
@@ -91,7 +99,7 @@
   {::chain/queue [(db-delegate conn)]})
 
 (defmethod d/pull-context :basic-tests [db pattern eid]
-  {::chain/queue [(pull-delegate db)]})
+  {::chain/queue [(pull-delegate db pattern eid)]})
 
 (defmethod d/query-context :basic-tests
   [& args]
@@ -103,6 +111,9 @@
 
 (defmethod d/transact-context :basic-tests [conn data]
   {::chain/queue [(transact-delegate conn data)]})
+
+(defmethod d/resolve-tempid-context :basic-tests [db tempids temp-id]
+  {::chain/queue [(resolve-tempid-delegate db tempids temp-id)]})
 
 (deftest basic-read-and-write                               ; using :basic-tests config above
 
@@ -119,10 +130,10 @@
       (is (= app-context (get-in db [::user])) "app context is present in db"))
 
     (testing "pull"
-      (is (= {:db/id        100
+      (is (= {:db/id        234
               :identity/key 42}
              ; below looks just like the datomic api
-             (d/pull db '[:db/id :identity/key] [:identity/key 42]))
+             (d/pull db '[:db/id :identity/key] 234))
           "pull returned data from delegate interceptor"))
 
     (testing "query"
@@ -139,9 +150,16 @@
       ; below looks just like the datomic api
       (is (= 42 (d/attribute db 100))))
 
-    (testing "transact"
+    (testing "transact and resolve ids"
       ; below looks just like the datomic api
-      (is (= {:tx-result {}} (d/transact conn [{:identity/key :foo}]))))))
+      (let [new-entity-id (d/tempid :db.part/user)
+            result (d/transact conn [{:db/id        new-entity-id
+                                      :identity/key :foo}])]
+        (is (= #{:db-before :db-after :tx-result}
+               (set (keys (d/transact conn [{:identity/key :foo}]))))
+            "mock transact delegate returned the results")
+        (is (= 123 (d/resolve-tempid (:db-after result) (:tempids result) new-entity-id))
+            "tempid clone returns mock delegate result")))))
 
 (deftest bad-data
   (testing "invalid app context"
@@ -165,7 +183,7 @@
 
 (defmethod d/pull-context :middleware-tests [db pattern eid]
   {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/pull pattern eid)
-                  (pull-delegate db)]})
+                  (pull-delegate db pattern eid)]})
 
 (defmethod d/query-context :middleware-tests
   [& args]
@@ -181,6 +199,10 @@
 (defmethod d/transact-context :middleware-tests [conn data]
   {::chain/queue [(middleware/logger (::middleware/logger-data conn) 'd/transact data)
                   (transact-delegate conn data)]})
+
+(defmethod d/resolve-tempid-context :middleware-tests [db tempids id]
+  {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/resolve-tempid tempids id)
+                  (resolve-tempid-delegate db tempids id)]})
 
 (deftest stateful-middleware
   (let [app-context {::username "Dave"}
@@ -208,14 +230,17 @@
          100)
     (d/attribute db 100)
     (middleware/start-logger-group conn :writes)
-    (d/transact conn [{:db/id        (d/tempid :db.part/user)
-                       :identity/id  (d/squuid)
-                       :identity/key :foo}])
-    (d/pull db '[*] 1)
+    (let [new-entity-id (d/tempid :db.part/user)
+          result (d/transact conn [{:db/id        new-entity-id
+                                    :identity/id  (d/squuid)
+                                    :identity/key :foo}])
+          new-entity-id (d/resolve-tempid (:db-after result) (:tempids result) new-entity-id)]
+
+      (d/pull db '[*] new-entity-id))
 
     ; finish namespace fn calls
 
-    (is (= '[d/db d/pull d/pull d/pull d/q d/attribute d/transact d/pull]
+    (is (= '[d/db d/pull d/pull d/pull d/q d/attribute d/transact d/resolve-tempid d/pull]
            (->> @log-atom
                 :invocations
                 (mapv :fn)))
@@ -225,15 +250,16 @@
       ;(pprint summary)
       (is (= [:reads :writes] (mapv :group summary))
           "two groups recorded")
-      (is (= [{:fn 'd/pull, :count 3}
-              {:fn 'd/q, :count 1}
-              {:fn 'd/attribute, :count 1}]
+      (is (= [{:fn 'd/pull :count 3}
+              {:fn 'd/q :count 1}
+              {:fn 'd/attribute :count 1}]
              (->> (first summary)
                   :invocations
                   (mapv #(select-keys % [:fn :count]))))
           "first group matches calls above, excluding d/db")
-      (is (= [{:fn 'd/transact, :count 1}
-              {:fn 'd/pull, :count 1}]
+      (is (= [{:fn 'd/transact :count 1}
+              {:fn 'd/resolve-tempid :count 1}
+              {:fn 'd/pull :count 1}]
              (->> (last summary)
                   :invocations
                   (mapv #(select-keys % [:fn :count]))))

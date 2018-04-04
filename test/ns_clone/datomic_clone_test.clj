@@ -26,12 +26,12 @@
 
 ; not logging d/tempid or d/squuid calls since the log atom is not available and they are not very useful in logs anyway
 
-; need a delegate for d/tempid, shared by all app/api combinations
+; need a delegate for d/tempid, shared by all app combinations
 (defmethod d/tempid-context :all [partition]
   {::chain/queue [(before :tempid-delegate (fn [context]
                                              (assoc context ::clone/result (str partition "-" (UUID/randomUUID)))))]})
 
-; need a delegate for d/squuid, shared by all app/api combinations
+; need a delegate for d/squuid, shared by all app combinations
 (defmethod d/squuid-context :all []
   {::chain/queue [(before :tempid-delegate (fn [context]
                                              (assoc context ::clone/result (UUID/randomUUID))))]})
@@ -108,8 +108,7 @@
 
   (let [app-context {::username "Dave"}
         ; this is a wrapped arg which provides all data required for the app interceptor chain
-        conn {::clone/api     :mock
-              ::clone/app     :basic-tests
+        conn {::clone/app     :basic-tests
               ::clone/UNSAFE! fake-conn
               ::user          app-context}
         ; below looks just like the datomic api
@@ -147,8 +146,7 @@
 (deftest bad-data
   (testing "invalid app context"
     (let [app-context {:invalid "value"}
-          conn {::clone/api     :mock
-                ::clone/app     :basic-tests
+          conn {::clone/app     :basic-tests
                 ::clone/UNSAFE! fake-conn
                 ::user          app-context}]
       (is (thrown? ExceptionInfo (d/db conn))
@@ -188,8 +186,7 @@
   (let [app-context {::username "Dave"}
         ; must use a vector for :invocations so that conj (in middleware/logger) appends at end
         log-atom (atom {:invocations []})
-        conn {::clone/api              :mock
-              ::clone/app              :middleware-tests
+        conn {::clone/app              :middleware-tests
               ::clone/UNSAFE!          fake-conn
               ::user                   app-context
               ::middleware/logger-data log-atom}

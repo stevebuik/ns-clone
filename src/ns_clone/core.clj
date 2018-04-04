@@ -6,8 +6,6 @@ ns-clone.core
 
 ;;;;;;;;; SPECS ;;;;;;;;
 
-(s/def ::api keyword?)
-
 ; making it clear that using the direct conn/db should be a careful choice.
 ; this keyword will make finding direct usages easy in src/git/commits.
 (s/def ::UNSAFE! any?)
@@ -19,13 +17,12 @@ ns-clone.core
   map?)
 
 (s/def ::app keyword?)
-(s/def ::context (s/keys :req [::api ::app ::UNSAFE!]))
+(s/def ::context (s/keys :req [::app ::UNSAFE!]))
 (s/def ::wrapped-app-context (s/and ::context ::with-app-context))
 
 (comment
 
-  (s/explain-data ::context {::api     :mock
-                             ::app     :dev
+  (s/explain-data ::context {::app     :dev
                              ::UNSAFE! "the peer/client conn"})
 
   (require '[clojure.test.check.generators :as gen])

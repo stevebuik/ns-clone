@@ -77,8 +77,7 @@
                       :db/doc         "Transaction annotation record which user invoked a transaction"}]
         test-data [{:identity/key :foo}]
         {:keys [conn data-results]} (utils/setup uri test-schema test-data)
-        conn {::clone/api              :mock
-              ::clone/app              :middleware-tests
+        conn {::clone/app              :middleware-tests
               ::clone/UNSAFE!          conn
               ::user                   app-context
               ::middleware/logger-data log-atom}]

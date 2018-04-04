@@ -10,6 +10,7 @@ This provides two benefits:
 2. the interceptor chain allows custom cross-cutting/middleware to be added to all function calls.
 This opens up many useful behaviours at the namespace/API layer e.g.
     * API call logging/timing
+    * Translating an api function to some other function
     * Error handling / translation e.g. using [Phrase](https://github.com/alexanderkiel/phrase) to convert some spec errors to user facing error messages
     * Application context specific concerns e.g. access controls
     * Metrics / sampling
@@ -20,11 +21,14 @@ This opens up many useful behaviours at the namespace/API layer e.g.
 
 The clone api uses multi-methods to allow open extension of any application context shape and interceptor chains.
 
-## The original use-case
+## Original use-case
 
 A wrapper for the Datomic API functions available in all libs i.e. the lowest common denominator set of functions from the Client AND Peer libraries.
 
-This is useful when want local dev/test against a local "mem" database but want to run your code in production against the Cloud/Client API.
+Useful when want local dev/test against a local "mem" database but want to run your code in production against the Cloud/Client API.
+
+This use-case is used as the sample and test source in this project.
+It also provides the clone namespace for any project needing consistent peer vs client code.
 
 The **datomic-peer-clone** sub-project has an implementation of the delegate interceptors for use with the Peer API.
 
@@ -40,6 +44,13 @@ This lib should provide a consistent api for both.
 A cloned api can also be used to migrate away from using a namespace without changing consumers of that namespace.
 Since your application code chooses how to delegate the clone functions, you can change the underlying implementation whenever you want.
 e.g. d/entity calls can be transparently translated to d/pull calls.
+
+The **datomic-clone.api** in this project does not include the *d/entity* function.
+This forces any peer based project to remove *d/entity* calls before using the clone api.
+This is because there is no reliable way to clone the *d/entity* function in the client api.
+*d/pull* is the closest but it's behaviour is just different enough that, even with a clone function, the delegate would be difficult to write.
+The easiest solution seems to be to avoid *d/entity*. If you need *d/entity* or any other missing function,
+you can create your own clone namespace instead of using **datomic-clone.api** and then you can clone exactly what you need.
 
 With some more hammock time this pattern might be useful in other use-cases as well.
 

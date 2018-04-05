@@ -75,9 +75,11 @@
   [conn _]
   (before :transact-delegate (fn [context]
                                ; a real delegate would invoke d/transact here
-                               (assoc context ::clone/result {:tx-result {}
-                                                              :db-before (assoc conn ::clone/UNSAFE! {})
-                                                              :db-after  (assoc conn ::clone/UNSAFE! {})}))))
+                               (assoc context ::clone/result
+                                              (atom         ; wrap result in an atom to emulate the future
+                                                {:tx-result {}
+                                                 :db-before (assoc conn ::clone/UNSAFE! {})
+                                                 :db-after  (assoc conn ::clone/UNSAFE! {})})))))
 
 (defn resolve-tempid-delegate
   [_ _ _]
@@ -153,10 +155,10 @@
     (testing "transact and resolve ids"
       ; below looks just like the datomic api
       (let [new-entity-id (d/tempid :db.part/user)
-            result (d/transact conn [{:db/id        new-entity-id
-                                      :identity/key :foo}])]
+            result @(d/transact conn [{:db/id        new-entity-id
+                                       :identity/key :foo}])]
         (is (= #{:db-before :db-after :tx-result}
-               (set (keys (d/transact conn [{:identity/key :foo}]))))
+               (set (keys @(d/transact conn [{:identity/key :foo}]))))
             "mock transact delegate returned the results")
         (is (= 123 (d/resolve-tempid (:db-after result) (:tempids result) new-entity-id))
             "tempid clone returns mock delegate result")))))
@@ -231,9 +233,9 @@
     (d/attribute db 100)
     (middleware/start-logger-group conn :writes)
     (let [new-entity-id (d/tempid :db.part/user)
-          result (d/transact conn [{:db/id        new-entity-id
-                                    :identity/id  (d/squuid)
-                                    :identity/key :foo}])
+          result @(d/transact conn [{:db/id        new-entity-id
+                                     :identity/id  (d/squuid)
+                                     :identity/key :foo}])
           new-entity-id (d/resolve-tempid (:db-after result) (:tempids result) new-entity-id)]
 
       (d/pull db '[*] new-entity-id))

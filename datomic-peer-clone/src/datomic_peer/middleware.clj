@@ -59,6 +59,12 @@ datomic-peer.middleware
 
 ; TODO transact-async-delegate - requires the same wrapping as transact-delegate, but inside a future
 
+(defn resolve-tempid-delegate
+  [db tempids id]
+  (before :resolve-tempid-delegate (fn [context]
+                                     (assoc context ::clone/result
+                                                    (d/resolve-tempid (::clone/UNSAFE! db) tempids id)))))
+
 (defn transaction-annotator
   [annotation]
   (before (fn [context]

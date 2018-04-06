@@ -52,6 +52,8 @@ This is because there is no reliable way to clone the *d/entity* function in the
 The easiest solution seems to be to avoid *d/entity*. If you need *d/entity* or any other missing function,
 you can create your own clone namespace instead of using **datomic-clone.api** and then you can clone exactly what you need.
 
+*d/invoke* is also absent in **datomic-clone.api** because there is currently no support for it in Cloud/Client.
+
 With some more hammock time this pattern might be useful in other use-cases as well.
 
 ## Usage
@@ -102,35 +104,39 @@ This excludes certain types of middleware but still provides many benefits.
 
 This lib is being used in a Datomic webapp, which is not yet running in Production.
 
+There are likely missing features around database values in the **datomic-peer-clone**.
+The initial version has just enough for my use-case and I'm sure that's not enough for everyone.
+Hence the need for feedback from people willing to try it.
+
 Not yet deployed to Clojars, will do so after initial feedback.
 
 ## Disadvantages
 
-* Stacktraces : will be bigger because, at least the delegate interceptor is included in the stack.
+* Stacktraces : will be bigger because, the delegate interceptor is included in the stack.
+* Exceptions : will be more complex because the Pedestal interceptor execution will wrap them in an ExceptionInfo with additional execution data
 * Error messages : arity errors in api calls are reported by the clone namespace. This is not too bad since the same error would occur using the cloned namespace.
+Currently they are reported by the delegate. This could be changed to be reported by the clone fn instead. What do you think?
 * Documentation : when you use your IDE to show doc for a clone fn, you will see the clone function doc and not the underlying (cloned) functions doc.
 
 ## Ideas / Future
 
-Add a macro to:
-
-1. generate the clone fns and queue factory fns i.e. less boilerplate to use this lib
-2. copy over the doc from the cloned functions
-3. compare each fn with the underlying cloned fn to ensure the APIs don't diverge
-
-The **datomic-clone.api** needs a transact-async fn. My future-fu is not strong enough to do this.
-If you know how to wrap a future in a future (without adding a dependency), I'd appreciate the help.
-
-Enhance the logger interceptor to record the invoking function i.e. one above in the call stack.
-This will be useful when wanting to local where a cloned fn was called.
+1. A client api sub-project. Requires mapping the **datomic-clone.api** functions to client api calls using delegates.
+The transact-async delegate will need to translate from a core.async channel to a future to keep the clone api consistent.
+2. Enhance the logger interceptor to record the invoking function i.e. one above in the call stack.
+This will be useful when wanting to know where in the source each cloned function was called.
+3. Add a macro to:
+    1. generate the clone fns and queue factory fns i.e. less boilerplate to use this lib
+    2. copy over the doc from the cloned functions
+    3. compare each fn with the underlying cloned fn to ensure the APIs don't diverge
 
 ## Acknowledgements
 
-The pattern of cloning the Datomic API was inspired by the [Bridge](https://github.com/robert-stuttaford/bridge)
-Thanks Rob for sharing!
+The pattern of cloning the Datomic API was inspired by Rob Stuttafords [Bridge](https://github.com/robert-stuttaford/bridge) project.
+
+The wrapped future pattern in **datomic-peer-clone** was completed with help from [Leo Borges](https://twitter.com/leonardo_borges)
 
 ## License
 
 Copyright © 2018 Steve Buikhuizen
 
-TODO which license?
+EPL, same as Clojure.

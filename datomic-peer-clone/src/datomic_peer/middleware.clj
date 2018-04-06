@@ -64,7 +64,16 @@ datomic-peer.middleware
               (assoc context ::clone/result
                              (future (wrap-transact-future conn @result-future)))))))
 
-; TODO transact-async-delegate - requires the same wrapping as transact-delegate, but inside a future
+(defn transact-async-delegate
+  [conn data]
+  (around :transact-async-delegate
+          (fn [context]
+            ; add the data to the context, so that other interceptors can decorate it if required
+            (assoc context ::transaction-data data))
+          (fn [context]
+            (let [result-future (d/transact-async (::clone/UNSAFE! conn) (::transaction-data context))]
+              (assoc context ::clone/result
+                             (future (wrap-transact-future conn @result-future)))))))
 
 (defn resolve-tempid-delegate
   [db tempids id]

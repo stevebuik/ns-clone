@@ -59,6 +59,15 @@
                     (peer-middleware/transaction-annotator tx-annotion))
                   (peer-middleware/transact-delegate conn data)]})
 
+(defmethod d/transact-async-context :peer-tests [conn data]
+  {::chain/queue [(middleware/logger (::middleware/logger-data conn) 'd/transact-async data)
+                  (let [tx-annotion (-> (select-keys conn [::clone/app ::user])
+                                        (update ::user ::username)
+                                        (set/rename-keys {::user      :user/username
+                                                          ::clone/app :app/key}))]
+                    (peer-middleware/transaction-annotator tx-annotion))
+                  (peer-middleware/transact-async-delegate conn data)]})
+
 (defmethod d/resolve-tempid-context :peer-tests
   [db tempids id]
   {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/resolve-tempid tempids id)
@@ -151,6 +160,23 @@
       (finally
         (utils/teardown uri)))))
 
+(deftest peer-tx-async
+  (let [{:keys [uri wrapped-conn data-results log-atom]} (test-conn)
+        db (d/db wrapped-conn)]
+    (try
+      (let [result (d/transact-async wrapped-conn [{:identity/id  (UUID/randomUUID)
+                                                    :identity/key :bar}])]
+        (let [{:keys [db-before db-after]} @result]
+          (is (s/valid? ::clone/wrapped-app-context db-before)
+              "db value was wrapped in wrapped future")))
+      (is (= '[d/db d/transact-async]
+             (->> @log-atom
+                  :invocations
+                  (mapv :fn)))
+          "logger interceptor recorded all api calls, including the failed transact call")
+      (finally
+        (utils/teardown uri)))))
+
 (deftest peer-tx-errors
   (let [{:keys [uri wrapped-conn data-results log-atom]} (test-conn)
         db (d/db wrapped-conn)]
@@ -160,6 +186,22 @@
                                                :identity/key :bar}]))
           "exception thrown by the nested future is seen by app code")
       (is (= '[d/db d/transact]
+             (->> @log-atom
+                  :invocations
+                  (mapv :fn)))
+          "logger interceptor recorded all api calls, including the failed transact call")
+      (finally
+        (utils/teardown uri)))))
+
+(deftest peer-tx-async-errors
+  (let [{:keys [uri wrapped-conn data-results log-atom]} (test-conn)
+        db (d/db wrapped-conn)]
+    (try
+      (let [result (d/transact-async wrapped-conn [{:identity/id  1
+                                                    :identity/key :bar}])]
+        (is (thrown? ExecutionException @result)
+            "exception thrown by async nested future is seen by app code"))
+      (is (= '[d/db d/transact-async]
              (->> @log-atom
                   :invocations
                   (mapv :fn)))

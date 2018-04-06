@@ -14,6 +14,7 @@
 (defmulti query-context clone/context-dispatch)
 (defmulti attribute-context clone/context-dispatch)
 (defmulti transact-context clone/context-dispatch)
+(defmulti transact-async-context clone/context-dispatch)
 (defmulti resolve-tempid-context clone/context-dispatch)
 (defmulti squuid-context (constantly :all))
 (defmulti tempid-context (constantly :all))
@@ -39,6 +40,10 @@
 (defn transact
   [& args]
   (clone/exec (apply transact-context args)))
+
+(defn transact-async
+  [& args]
+  (clone/exec (apply transact-async-context args)))
 
 ; fns below are for backward compatibility on peer based projects migrating to the clone api
 ; they break the design requirement that one of the args is wrapped in a map
@@ -71,4 +76,6 @@
                                :aid any?))
 (s/fdef transact :args (s/cat :conn ::clone/wrapped-app-context
                               :data vector?))
+(s/fdef transact-async :args (s/cat :conn ::clone/wrapped-app-context
+                                    :data vector?))
 (s/fdef tempid :args (s/cat :partition keyword?))

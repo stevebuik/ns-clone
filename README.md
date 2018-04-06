@@ -25,19 +25,19 @@ The clone api uses multi-methods to allow open extension of any application cont
 
 A wrapper for the Datomic API functions available in all libs i.e. the lowest common denominator set of functions from the Client AND Peer libraries.
 
-Useful when want local dev/test against a local "mem" database but want to run your code in production against the Cloud/Client API.
+Useful when you want local dev/test against a local "mem" database but want to run your code in production against the Cloud/Client API.
 
 This use-case is used as the sample and test source in this project.
-It also provides the clone namespace for any project needing consistent peer vs client code.
+It also provides a Datomic clone namespace for any project needing consistent peer vs client code.
 
-The **datomic-peer-clone** sub-project has an implementation of the delegate interceptors for use with the Peer API.
+The [datomic-peer-clone](https://github.com/stevebuik/ns-clone/tree/master/datomic-peer-clone) sub-project has an implementation of the delegate interceptors for use with the Peer API.
 
 TODO **datomic-client-clone** sub-project
 
 **On Datomic API Open-ness**
 
-The Datomic peer api not open (i.e. functions only) but the client api is a protocol so much better.
-This lib should provide a consistent api for both.
+The Datomic peer api less open (i.e. functions only) but the client api is a protocol so much better.
+This lib can provide a consistent api for both.
 
 ## Migration use-case
 
@@ -54,14 +54,12 @@ you can create your own clone namespace instead of using **datomic-clone.api** a
 
 *d/invoke* is also absent in **datomic-clone.api** because there is currently no support for it in Cloud/Client.
 
-With some more hammock time this pattern might be useful in other use-cases as well.
-
 ## Usage
 
-Look at the Datomic example for how to clone a namespace. Then in your own *clone* namespace:
+Look at the Datomic example for how to clone a namespace. Then:
 
 1. If cloning a non-Datomic namespace, create a clone namespace following the pattern in the datomic-clone.api namespace
-2. Implement the *defmethods* for your application context and interceptor chains. Follow the pattern in **datomic-peer-clone** or the tests in this project.
+2. Implement the *defmethods* for your application context and interceptor chains. Follow the pattern in [datomic-peer-clone](https://github.com/stevebuik/ns-clone/tree/master/datomic-peer-clone) or the tests in this project.
 3. Optionally implement a spec for your app context data
 4. Replace the `(:require [datomic.api :as d])` with your clone namespace anywhere that it is required
 5. Try using the logger interceptor, the feedback is interesting, especially for functions that make network calls
@@ -71,11 +69,13 @@ Look at the datomic-clone-test to see that the initial *conn* value being create
 
 The datomic-clone-test namespace provides a simple mocked version of this.
 
-Then look at the **datomic-peer-clone** sub-project to see how to implement a clone with a real delegate interceptor instead of the mock delegates in the tests.
-The **datomic-peer-clone** sub-project is intended for use as a dependency in Datomic projects which need to run using both the local (peer) or Cloud (client) APIs.
+Then look at the [datomic-peer-clone](https://github.com/stevebuik/ns-clone/tree/master/datomic-peer-clone) sub-project to see how to implement a clone with a real delegate interceptor instead of the mock delegates in the tests.
 
-Despite the Datomic slant, the **ns-clone** project has no Datomic dependencies and is designed to be used to clone any namespace, without Datomic.
-That is why **datomic-peer-clone** is a sub-project, to avoid unwanted dependencies when used elsewhere.
+The [datomic-peer-clone](https://github.com/stevebuik/ns-clone/tree/master/datomic-peer-clone) sub-project is intended for use as a dependency in Datomic projects which need to run using both the local (peer) or Cloud (client) APIs.
+It includes the ns-clone project as its only dependency.
+
+Despite the Datomic slant, the **ns-clone** project has no Datomic dependencies and can be used to clone any namespace, without Datomic.
+That is why [datomic-peer-clone](https://github.com/stevebuik/ns-clone/tree/master/datomic-peer-clone) is a sub-project, to avoid unwanted dependencies when used elsewhere.
 
 ## Installation
 
@@ -93,7 +93,7 @@ To install from source:
 
 This lib works by passing around a wrapper (map) in place of one of the args to all cloned functions.
 The wrapped value (the original arg) is passed in the :UNSAFE! map entry. This makes it available for the *delegate* interceptor to use it to call the underlying function.
-Of course any function can access the :UNSAFE! value but that will appear in source and discourage any developer from going around the interceptor chain.
+Of course any function can access the :UNSAFE! value, but that will appear in source and discourage any developer from going around the interceptor chain.
 
 If the wrapped arg is translated into another value, for use in another cloned function, then it should transfer all the map data and assoc the new value in the :UNSAFE! key.
 
@@ -104,7 +104,7 @@ This excludes certain types of middleware but still provides many benefits.
 
 This lib is being used in a Datomic webapp, which is not yet running in Production.
 
-There are likely missing features around database values in the **datomic-peer-clone**.
+There are likely missing features around database values in the [datomic-peer-clone](https://github.com/stevebuik/ns-clone/tree/master/datomic-peer-clone).
 The initial version has just enough for my use-case and I'm sure that's not enough for everyone.
 Hence the need for feedback from people willing to try it.
 
@@ -112,15 +112,16 @@ Not yet deployed to Clojars, will do so after initial feedback.
 
 ## Disadvantages
 
-* Stacktraces : will be bigger because, the delegate interceptor is included in the stack.
-* Exceptions : will be more complex because the Pedestal interceptor execution will wrap them in an ExceptionInfo with additional execution data
-* Error messages : arity errors in api calls are reported by the clone namespace. This is not too bad since the same error would occur using the cloned namespace.
+* Stacktraces : will be bigger because, the interceptor chain handling calls are included in the stack.
+* Exceptions : will be more complex because the Pedestal interceptor execution will wrap them in an ExceptionInfo with additional execution data.
+This is pretty easy to spot so not too bad.
+* Error messages : arity errors in api calls are reported by the clone namespace. This is tolerable since the same error would occur using the cloned namespace.
 Currently they are reported by the delegate. This could be changed to be reported by the clone fn instead. What do you think?
 * Documentation : when you use your IDE to show doc for a clone fn, you will see the clone function doc and not the underlying (cloned) functions doc.
 
 ## Ideas / Future
 
-1. A client api sub-project. Requires mapping the **datomic-clone.api** functions to client api calls using delegates.
+1. A Datomic Client api sub-project. Requires mapping the **datomic-clone.api** functions to client api calls using delegates.
 The transact-async delegate will need to translate from a core.async channel to a future to keep the clone api consistent.
 2. Enhance the logger interceptor to record the invoking function i.e. one above in the call stack.
 This will be useful when wanting to know where in the source each cloned function was called.
@@ -131,9 +132,9 @@ This will be useful when wanting to know where in the source each cloned functio
 
 ## Acknowledgements
 
-The pattern of cloning the Datomic API was inspired by Rob Stuttafords [Bridge](https://github.com/robert-stuttaford/bridge) project.
+Cloning the Datomic API was inspired by Rob Stuttafords [Bridge](https://github.com/robert-stuttaford/bridge) project.
 
-The wrapped future pattern in **datomic-peer-clone** was completed with help from [Leo Borges](https://twitter.com/leonardo_borges)
+Got some help on futures for [datomic-peer-clone](https://github.com/stevebuik/ns-clone/tree/master/datomic-peer-clone) from [Leo Borges](https://twitter.com/leonardo_borges)
 
 ## License
 

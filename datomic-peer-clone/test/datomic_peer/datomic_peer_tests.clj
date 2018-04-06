@@ -13,7 +13,8 @@
     [datomic-peer.middleware :as peer-middleware]
 
     [datomic-peer.test-utils :as utils])
-  (:import (java.util UUID)))
+  (:import (java.util UUID)
+           (java.util.concurrent ExecutionException)))
 
 (st/instrument)
 (s/check-asserts true)
@@ -63,35 +64,42 @@
   {::chain/queue [(middleware/logger (::middleware/logger-data db) 'd/resolve-tempid tempids id)
                   (peer-middleware/resolve-tempid-delegate db tempids id)]})
 
-(deftest peer-middleware
+(def test-schema [{:db/ident       :identity/key
+                   :db/valueType   :db.type/keyword
+                   :db/cardinality :db.cardinality/one
+                   :db/unique      :db.unique/identity
+                   :db/doc         "Application data for storing unique keywords"}
+                  {:db/ident       :identity/id
+                   :db/valueType   :db.type/uuid
+                   :db/cardinality :db.cardinality/one
+                   :db/doc         "Application data for storing user facing ids"}
+                  {:db/ident       :app/key
+                   :db/valueType   :db.type/keyword
+                   :db/cardinality :db.cardinality/one
+                   :db/doc         "Transaction annotation recording which 'app' chain was being used when a transaction occurred"}
+                  {:db/ident       :user/username
+                   :db/valueType   :db.type/string
+                   :db/cardinality :db.cardinality/one
+                   :db/doc         "Transaction annotation record which user invoked a transaction"}])
+
+(defn- test-conn
+  []
   (let [uri (str "datomic:mem://test-" (UUID/randomUUID))
         app-context {::username "Dave"}
         log-atom (atom {:invocations []})                   ; must use a vector so that conj (in middleware/logger) appends at end
-        test-schema [{:db/ident       :identity/key
-                      :db/valueType   :db.type/keyword
-                      :db/cardinality :db.cardinality/one
-                      :db/unique      :db.unique/identity
-                      :db/doc         "Application data for storing unique keywords"}
-                     {:db/ident       :identity/id
-                      :db/valueType   :db.type/uuid
-                      :db/cardinality :db.cardinality/one
-                      :db/doc         "Application data for storing user facing ids"}
-                     {:db/ident       :app/key
-                      :db/valueType   :db.type/keyword
-                      :db/cardinality :db.cardinality/one
-                      :db/doc         "Transaction annotation recording which 'app' chain was being used when a transaction occurred"}
-                     {:db/ident       :user/username
-                      :db/valueType   :db.type/string
-                      :db/cardinality :db.cardinality/one
-                      :db/doc         "Transaction annotation record which user invoked a transaction"}]
         test-data [{:identity/key :foo}]
-        {:keys [conn data-results]} (utils/setup uri test-schema test-data)
-        ; your code can create this wrapped-connection however it likes
-        wrapped-conn (s/assert ::clone/wrapped-app-context
-                               {::clone/app              :peer-tests
-                                ::clone/UNSAFE!          conn
-                                ::user                   app-context
-                                ::middleware/logger-data log-atom})]
+        {:keys [conn data-results]} (utils/setup uri test-schema test-data)]
+    {:uri          uri
+     :wrapped-conn (s/assert ::clone/wrapped-app-context
+                             {::clone/app              :peer-tests
+                              ::clone/UNSAFE!          conn
+                              ::user                   app-context
+                              ::middleware/logger-data log-atom})
+     :data-results data-results
+     :log-atom     log-atom}))
+
+(deftest peer-middleware
+  (let [{:keys [uri wrapped-conn data-results log-atom]} (test-conn)]
 
     (try
 
@@ -140,9 +148,24 @@
                   (mapv :fn)))
           "logger interceptor recorded all api calls, including the db call")
 
-      (catch Throwable t
-        (utils/teardown uri)
-        (throw t)))))
+      (finally
+        (utils/teardown uri)))))
+
+(deftest peer-tx-errors
+  (let [{:keys [uri wrapped-conn data-results log-atom]} (test-conn)
+        db (d/db wrapped-conn)]
+    (try
+      (is (thrown? ExecutionException
+                   @(d/transact wrapped-conn [{:identity/id  1 ; << incorrect type
+                                               :identity/key :bar}]))
+          "exception thrown by the nested future is seen by app code")
+      (is (= '[d/db d/transact]
+             (->> @log-atom
+                  :invocations
+                  (mapv :fn)))
+          "logger interceptor recorded all api calls, including the failed transact call")
+      (finally
+        (utils/teardown uri)))))
 
 
 

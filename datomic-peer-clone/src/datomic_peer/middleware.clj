@@ -40,6 +40,19 @@ datomic-peer.middleware
   (before :attribute-delegate (fn [context]
                                 (assoc context ::clone/result (d/attribute (::clone/UNSAFE! db) aid)))))
 
+(defn wrap-db
+  "wrap a datomic db value by transferring all data from a conn"
+  [db conn]
+  ; transfer all context from conn to db values
+  (assoc conn ::clone/UNSAFE! db))
+
+(defn wrap-transact-future
+  "wrap a datomic transaction result by wrapping all db values"
+  [conn result]
+  (-> result
+      (update :db-before wrap-db conn)
+      (update :db-after wrap-db conn)))
+
 (defn transact-delegate
   [conn data]
   (around :transact-delegate
@@ -47,15 +60,9 @@ datomic-peer.middleware
             ; add the data to the context, so that other interceptors can decorate it if required
             (assoc context ::transaction-data data))
           (fn [context]
-            (let [result @(d/transact (::clone/UNSAFE! conn) (::transaction-data context))
-                  wrap-db (fn [db]
-                            (assoc conn ::clone/UNSAFE! db))]
+            (let [result-future (d/transact (::clone/UNSAFE! conn) (::transaction-data context))]
               (assoc context ::clone/result
-                             ; use an atom to make the result IDeref-able since that is the result shape for d/transact
-                             (atom
-                               (-> result
-                                   (update :db-before wrap-db)
-                                   (update :db-after wrap-db))))))))
+                             (future (wrap-transact-future conn @result-future)))))))
 
 ; TODO transact-async-delegate - requires the same wrapping as transact-delegate, but inside a future
 

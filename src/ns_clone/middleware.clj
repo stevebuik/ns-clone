@@ -14,7 +14,8 @@
     (fn [context]
       (let [log-entry (cond-> {:fn       fn-sym
                                :duration (- (System/nanoTime)
-                                            (get-in context [::logger-start fn-sym]))}
+                                            (get-in context [::logger-start fn-sym]))
+                               :id       (:io.pedestal.interceptor.chain/execution-id context)}
                               (seq args) (assoc :args args))]
         (swap! log-atom (fn [log]
                           ;(sc.api/spy :f)

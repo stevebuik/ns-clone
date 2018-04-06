@@ -17,7 +17,7 @@ This opens up many useful behaviours at the namespace/API layer e.g.
     * Canary releases driven by the app context data
     * Versioning
     * Experiments : transparently running a new version of a fn async next to the original and reporting when results differ
-    * Your ideas here!
+    * What else?
 
 The clone api uses multi-methods to allow open extension of any application context shape and interceptor chains.
 

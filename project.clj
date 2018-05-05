@@ -1,4 +1,4 @@
-(defproject ns-clone "0.1.0-SNAPSHOT"
+(defproject ns-clone "0.1.0"
   :description "Clones a namespace by replicating some/all functions and invoking them using Pedestal Interceptor chains."
   :license {:name "Eclipse Public License"
             :url  "http://www.eclipse.org/legal/epl-v10.html"}

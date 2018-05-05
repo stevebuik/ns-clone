@@ -34,9 +34,9 @@ The [datomic-peer-clone](https://github.com/stevebuik/ns-clone/tree/master/datom
 
 TODO **datomic-client-clone** sub-project
 
-**On Datomic API Open-ness**
+**On Datomic API open-ness**
 
-The Datomic peer api less open (i.e. functions only) but the client api is a protocol so much better.
+The Datomic peer api is less open (i.e. functions only) but the client api is a protocol so much better.
 This lib can provide a consistent api for both.
 
 ## Migration use-case
